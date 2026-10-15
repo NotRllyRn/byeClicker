@@ -7,6 +7,23 @@ const autoJoinBtn = document.getElementById('autoJoin');
 const notifyBtn = document.getElementById('notify');
 const email = document.getElementById('email');
 
+async function requestNotificationDataPermission() {
+    const firefoxApi = globalThis.browser;
+
+    if (!firefoxApi?.runtime?.getBrowserInfo || !firefoxApi?.permissions?.request) {
+        return true;
+    }
+
+    try {
+        return await firefoxApi.permissions.request({
+            data_collection: ['personallyIdentifyingInfo'],
+        });
+    } catch (error) {
+        console.error('Unable to request notification data permission:', error);
+        return false;
+    }
+}
+
 // Update email on change
 email.addEventListener('input', () => {
     chrome.storage.local.set({email: email.value});
@@ -76,13 +93,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     const tab = tabs[0];
+    const restrictedProtocols = ['about:', 'brave:', 'chrome:', 'chrome-extension:', 'edge:', 'moz-extension:', 'opera:'];
+    let protocol;
 
-    if (tab.url === undefined || tab.url.indexOf('chrome') == 0) {
-        container.innerHTML = '<h1>ByeClicker can\'t access Chrome Pages</h1>';
-    } else if (tab.url.indexOf('file') == 0) {
+    try {
+        protocol = new URL(tab.url).protocol;
+    } catch (error) {
+        protocol = undefined;
+    }
+
+    if (protocol === undefined || restrictedProtocols.includes(protocol)) {
+        container.innerHTML = '<h1>ByeClicker can\'t access browser pages</h1>';
+    } else if (protocol === 'file:') {
         container.innerHTML = '<h1>ByeClicker can\'t access local files</h1>';
     } else if (!tab.url.includes('student.iclicker.com')) {
-        container.innerHTML = '<h1>ByeClicker works only on iCliker pages</h1>';
+        container.innerHTML = '<h1>ByeClicker works only on iClicker pages</h1>';
     } else {
         startBtn.addEventListener('click', () => {
             startBtn.style.transition = '0.5s';
@@ -140,7 +165,12 @@ chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
             chrome.tabs.sendMessage(tab.id, {from: 'popup', msg: 'autoJoin'});
         });
 
-        notifyBtn.addEventListener('click', () => {
+        notifyBtn.addEventListener('click', async () => {
+            if (notifyBtn.checked && !await requestNotificationDataPermission()) {
+                notifyBtn.checked = false;
+                return;
+            }
+
             chrome.tabs.sendMessage(tab.id, {from: 'popup', msg: 'notify', email: email.value});
         });
     }
